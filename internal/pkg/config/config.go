@@ -63,6 +63,8 @@ type Container struct {
 	RequireDocker bool          `yaml:"require_docker"` // Always require a reachable docker daemon, even if not required by act_runner
 	DockerTimeout time.Duration `yaml:"docker_timeout"` // Timeout to wait for the docker daemon to be reachable, if docker is required by require_docker or act_runner
 	BindWorkdir   bool          `yaml:"bind_workdir"`   // BindWorkdir binds the workspace to the host filesystem instead of using Docker volumes. Required for DinD when jobs use docker compose with bind mounts.
+	Platform      string        `yaml:"platform"`       // Platform forces the OS/architecture of job containers (Docker's --platform, e.g. "linux/amd64"). When empty, Docker chooses the default platform.
+	Devices       []string      `yaml:"devices"`        // Devices specifies additional Docker devices to attach to job containers (e.g. "lima-vm.io/rosetta=cached"). Each entry is added as a "--device=<value>" option.
 }
 
 // Host represents the configuration for the host.

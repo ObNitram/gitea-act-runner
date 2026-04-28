@@ -239,7 +239,8 @@ func (r *Runner) run(ctx context.Context, task *runnerv1.Task, reporter *report.
 		ContainerNamePrefix:   fmt.Sprintf("GITEA-ACTIONS-TASK-%d", task.Id),
 		ContainerMaxLifetime:  maxLifetime,
 		ContainerNetworkMode:  container.NetworkMode(r.cfg.Container.Network),
-		ContainerOptions:      r.cfg.Container.Options,
+		ContainerOptions:      buildContainerOptions(r.cfg.Container.Options, r.cfg.Container.Devices),
+		ContainerArchitecture: r.cfg.Container.Platform,
 		ContainerDaemonSocket: r.cfg.Container.DockerHost,
 		Privileged:            r.cfg.Container.Privileged,
 		DefaultActionInstance: r.getDefaultActionsURL(task),
@@ -280,6 +281,28 @@ func (r *Runner) run(ctx context.Context, task *runnerv1.Task, reporter *report.
 
 func (r *Runner) RunningCount() int64 {
 	return r.runningCount.Load()
+}
+
+// buildContainerOptions combines the user-provided container options string with
+// any additional Docker devices declared in the configuration. Each device is
+// appended as a "--device=<value>" flag, so they integrate with the existing
+// options pipeline used to start job containers.
+func buildContainerOptions(options string, devices []string) string {
+	if len(devices) == 0 {
+		return options
+	}
+	parts := make([]string, 0, 1+len(devices))
+	if trimmed := strings.TrimSpace(options); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+	for _, dev := range devices {
+		dev = strings.TrimSpace(dev)
+		if dev == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("--device=%s", dev))
+	}
+	return strings.Join(parts, " ")
 }
 
 func (r *Runner) Declare(ctx context.Context, labels []string) (*connect.Response[runnerv1.DeclareResponse], error) {

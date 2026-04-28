@@ -127,6 +127,17 @@ container:
   # from the DinD daemon's filesystem. When enabled, ensure the workspace parent
   # directory is also mounted into the runner container and listed in valid_volumes.
   bind_workdir: false
+  # Force the OS/architecture of job containers, equivalent to "docker run --platform=<value>".
+  # Useful e.g. on an arm64 host that should execute jobs as if they ran on amd64
+  # (requires Docker/Lima/Rosetta or qemu emulation to be available on the host).
+  # Leave empty to use the host's default platform.
+  platform: ""
+  # Additional Docker devices to attach to job containers. Each entry is passed as
+  # "--device=<value>" when the container is started. For instance, to expose
+  # Rosetta from a Lima VM use:
+  # devices:
+  #   - "lima-vm.io/rosetta=cached"
+  devices: []
 
 host:
   # The parent directory of a job's working directory.
