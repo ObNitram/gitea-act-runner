@@ -262,6 +262,13 @@ func RunnerArch(ctx context.Context) string {
 		return ""
 	}
 
+	if arch := runnerArchFromArchitecture(info.Architecture); arch != "" {
+		return arch
+	}
+	return info.Architecture
+}
+
+func runnerArchFromArchitecture(arch string) string {
 	archMapper := map[string]string{
 		"x86_64":  "X64",
 		"amd64":   "X64",
@@ -269,10 +276,20 @@ func RunnerArch(ctx context.Context) string {
 		"aarch64": "ARM64",
 		"arm64":   "ARM64",
 	}
-	if arch, ok := archMapper[info.Architecture]; ok {
+	if arch, ok := archMapper[arch]; ok {
 		return arch
 	}
-	return info.Architecture
+	return ""
+}
+
+// RunnerArchFromPlatform converts a docker platform string (eg. linux/amd64)
+// into GitHub-compatible runner.arch values (eg. X64).
+func RunnerArchFromPlatform(platform string) string {
+	_, architecture, ok := strings.Cut(platform, "/")
+	if !ok {
+		return ""
+	}
+	return runnerArchFromArchitecture(architecture)
 }
 
 func (cr *containerReference) connect() common.Executor {
@@ -366,6 +383,14 @@ func (cr *containerReference) mergeContainerConfigs(ctx context.Context, config 
 		return nil, nil, fmt.Errorf("Cannot split container options: '%s': '%w'", input.Options, err)
 	}
 
+	containerPlatform, optionsArgs, err := extractContainerPlatformOption(optionsArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Cannot parse container options: '%s': '%w'", input.Options, err)
+	}
+	if containerPlatform != "" {
+		cr.input.Platform = containerPlatform
+	}
+
 	err = flags.Parse(optionsArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Cannot parse container options: '%s': '%w'", input.Options, err)
@@ -430,6 +455,68 @@ func (cr *containerReference) mergeContainerConfigs(ctx context.Context, config 
 	logger.Debugf("Merged container.HostConfig ==> %+v", hostConfig)
 
 	return config, hostConfig, nil
+}
+
+func (cr *containerReference) GetRunnerContext(ctx context.Context) map[string]any {
+	arch := RunnerArch(ctx)
+	if platformArch := RunnerArchFromPlatform(cr.input.Platform); platformArch != "" {
+		arch = platformArch
+	}
+	return map[string]any{
+		"os":         "Linux",
+		"arch":       arch,
+		"temp":       "/tmp",
+		"tool_cache": "/opt/hostedtoolcache",
+	}
+}
+
+func extractContainerPlatformOption(args []string) (string, []string, error) {
+	filtered := make([]string, 0, len(args))
+	platform := ""
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "--platform") {
+			filtered = append(filtered, arg)
+			continue
+		}
+
+		if arg == "--platform" {
+			i++
+			if i >= len(args) {
+				return "", nil, errors.New("flag needs an argument: --platform")
+			}
+			platform = args[i]
+			continue
+		}
+
+		value, ok := strings.CutPrefix(arg, "--platform=")
+		if ok {
+			platform = value
+			continue
+		}
+
+		filtered = append(filtered, arg)
+	}
+
+	return platform, filtered, nil
+}
+
+// PlatformFromContainerOptions extracts --platform from a container options string.
+func PlatformFromContainerOptions(options string) (string, error) {
+	if options == "" {
+		return "", nil
+	}
+
+	args, err := shellquote.Split(options)
+	if err != nil {
+		return "", err
+	}
+	platform, _, err := extractContainerPlatformOption(args)
+	if err != nil {
+		return "", err
+	}
+	return platform, nil
 }
 
 func (cr *containerReference) create(capAdd, capDrop []string) common.Executor {

@@ -414,7 +414,11 @@ func newStepContainer(ctx context.Context, step step, image string, cmd, entrypo
 
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TOOL_CACHE", "/opt/hostedtoolcache"))
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_OS", "Linux"))
-	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", container.RunnerArch(ctx)))
+	runnerArch := container.RunnerArch(ctx)
+	if platformRunnerArch := container.RunnerArchFromPlatform(rc.Config.ContainerArchitecture); platformRunnerArch != "" {
+		runnerArch = platformRunnerArch
+	}
+	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", runnerArch))
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 
 	binds, mounts := rc.GetBindsAndMounts()

@@ -20,9 +20,11 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDocker(t *testing.T) {
@@ -326,4 +328,66 @@ func TestCheckVolumes(t *testing.T) {
 			assert.Equal(t, tc.expectedBinds, hostConf.Binds)
 		})
 	}
+}
+
+func TestMergeContainerConfigsParsesPlatformFromOptions(t *testing.T) {
+	logger, _ := test.NewNullLogger()
+	ctx := common.WithLogger(context.Background(), logger)
+
+	cr := &containerReference{
+		input: &NewContainerInput{
+			NetworkMode: "bridge",
+			Options:     "--platform=linux/amd64 --device=/dev/null:/dev/null",
+		},
+	}
+
+	config := &container.Config{
+		ExposedPorts: nat.PortSet{},
+	}
+	hostConfig := &container.HostConfig{
+		NetworkMode: container.NetworkMode("bridge"),
+	}
+
+	_, gotHostConfig, err := cr.mergeContainerConfigs(ctx, config, hostConfig)
+	require.NoError(t, err)
+	assert.Equal(t, "linux/amd64", cr.input.Platform)
+	assert.Len(t, gotHostConfig.Devices, 1)
+}
+
+func TestMergeContainerConfigsPlatformOptionRequiresValue(t *testing.T) {
+	logger, _ := test.NewNullLogger()
+	ctx := common.WithLogger(context.Background(), logger)
+
+	cr := &containerReference{
+		input: &NewContainerInput{
+			NetworkMode: "bridge",
+			Options:     "--platform",
+		},
+	}
+
+	config := &container.Config{
+		ExposedPorts: nat.PortSet{},
+	}
+	hostConfig := &container.HostConfig{
+		NetworkMode: container.NetworkMode("bridge"),
+	}
+
+	_, _, err := cr.mergeContainerConfigs(ctx, config, hostConfig)
+	assert.EqualError(t, err, "Cannot parse container options: '--platform': 'flag needs an argument: --platform'")
+}
+
+func TestPlatformFromContainerOptions(t *testing.T) {
+	platform, err := PlatformFromContainerOptions("--platform=linux/amd64 --device=/dev/null:/dev/null")
+	require.NoError(t, err)
+	assert.Equal(t, "linux/amd64", platform)
+}
+
+func TestGetRunnerContextUsesPlatformArchitecture(t *testing.T) {
+	cr := &containerReference{
+		input: &NewContainerInput{
+			Platform: "linux/amd64",
+		},
+	}
+	runnerCtx := cr.GetRunnerContext(context.Background())
+	assert.Equal(t, "X64", runnerCtx["arch"])
 }

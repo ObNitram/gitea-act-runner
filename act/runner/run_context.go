@@ -265,6 +265,18 @@ func (rc *RunContext) startJobContainer() common.Executor {
 	return func(ctx context.Context) error {
 		logger := common.Logger(ctx)
 		image := rc.platformImage(ctx)
+		effectiveContainerPlatform := rc.Config.ContainerArchitecture
+		if effectiveContainerPlatform == "" {
+			platformFromOptions, err := container.PlatformFromContainerOptions(rc.options(ctx))
+			if err != nil {
+				return fmt.Errorf("failed to parse container platform from options: %w", err)
+			}
+			effectiveContainerPlatform = platformFromOptions
+		}
+		runnerArch := container.RunnerArch(ctx)
+		if platformRunnerArch := container.RunnerArchFromPlatform(effectiveContainerPlatform); platformRunnerArch != "" {
+			runnerArch = platformRunnerArch
+		}
 		rawLogger := logger.WithField("raw_output", true)
 		logWriter := common.NewLineWriter(rc.commandHandler(ctx), func(s string) bool {
 			if rc.Config.LogOutput {
@@ -290,7 +302,7 @@ func (rc *RunContext) startJobContainer() common.Executor {
 
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TOOL_CACHE", "/opt/hostedtoolcache"))
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_OS", "Linux"))
-		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", container.RunnerArch(ctx)))
+		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", runnerArch))
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 		envList = append(envList, fmt.Sprintf("%s=%s", "LANG", "C.UTF-8")) // Use same locale as GitHub Actions
 
@@ -353,7 +365,7 @@ func (rc *RunContext) startJobContainer() common.Executor {
 				Stderr:         logWriter,
 				Privileged:     rc.Config.Privileged,
 				UsernsMode:     rc.Config.UsernsMode,
-				Platform:       rc.Config.ContainerArchitecture,
+				Platform:       effectiveContainerPlatform,
 				AutoRemove:     rc.Config.AutoRemove,
 				Options:        rc.ExprEval.Interpolate(ctx, spec.Options),
 				NetworkMode:    networkName,
@@ -416,7 +428,7 @@ func (rc *RunContext) startJobContainer() common.Executor {
 			Stderr:         logWriter,
 			Privileged:     rc.Config.Privileged,
 			UsernsMode:     rc.Config.UsernsMode,
-			Platform:       rc.Config.ContainerArchitecture,
+			Platform:       effectiveContainerPlatform,
 			Options:        rc.options(ctx),
 			AutoRemove:     rc.Config.AutoRemove,
 			ValidVolumes:   rc.Config.ValidVolumes,
