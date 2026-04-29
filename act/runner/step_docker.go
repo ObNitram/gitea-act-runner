@@ -112,7 +112,7 @@ func (sd *stepDocker) newStepContainer(ctx context.Context, image string, cmd, e
 
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TOOL_CACHE", "/opt/hostedtoolcache"))
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_OS", "Linux"))
-	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", container.RunnerArch(ctx)))
+	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", rc.runnerArch(ctx)))
 	envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 
 	binds, mounts := rc.GetBindsAndMounts()

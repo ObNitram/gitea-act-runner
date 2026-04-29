@@ -97,6 +97,9 @@ func (rc *RunContext) NewExpressionEvaluatorWithEnv(ctx context.Context, env map
 	}
 	if rc.JobContainer != nil {
 		ee.Runner = rc.JobContainer.GetRunnerContext(ctx)
+		if arch := platformToRunnerArch(rc.Config.ContainerArchitecture); arch != "" {
+			ee.Runner["arch"] = arch
+		}
 	}
 	return expressionEvaluator{
 		interpreter: exprparser.NewInterpeter(ee, exprparser.Config{
@@ -151,6 +154,9 @@ func (rc *RunContext) NewStepExpressionEvaluator(ctx context.Context, step step)
 	}
 	if rc.JobContainer != nil {
 		ee.Runner = rc.JobContainer.GetRunnerContext(ctx)
+		if arch := platformToRunnerArch(rc.Config.ContainerArchitecture); arch != "" {
+			ee.Runner["arch"] = arch
+		}
 	}
 	return expressionEvaluator{
 		interpreter: exprparser.NewInterpeter(ee, exprparser.Config{

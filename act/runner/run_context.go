@@ -232,7 +232,11 @@ func (rc *RunContext) startHostEnvironment() common.Executor {
 			StdOut: logWriter,
 		}
 		rc.cleanUpJobContainer = rc.JobContainer.Remove()
-		for k, v := range rc.JobContainer.GetRunnerContext(ctx) {
+		runnerCtx := rc.JobContainer.GetRunnerContext(ctx)
+		if arch := platformToRunnerArch(rc.Config.ContainerArchitecture); arch != "" {
+			runnerCtx["arch"] = arch
+		}
+		for k, v := range runnerCtx {
 			if v, ok := v.(string); ok {
 				rc.Env["RUNNER_"+strings.ToUpper(k)] = v
 			}
@@ -290,7 +294,7 @@ func (rc *RunContext) startJobContainer() common.Executor {
 
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TOOL_CACHE", "/opt/hostedtoolcache"))
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_OS", "Linux"))
-		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", container.RunnerArch(ctx)))
+		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_ARCH", rc.runnerArch(ctx)))
 		envList = append(envList, fmt.Sprintf("%s=%s", "RUNNER_TEMP", "/tmp"))
 		envList = append(envList, fmt.Sprintf("%s=%s", "LANG", "C.UTF-8")) // Use same locale as GitHub Actions
 
@@ -1167,4 +1171,44 @@ func (rc *RunContext) GetServiceBindsAndMounts(svcVolumes []string) ([]string, m
 	}
 
 	return binds, mounts
+}
+
+// runnerArch returns the value to expose as RUNNER_ARCH (and runner.arch) for
+// jobs executed by this RunContext. When ContainerArchitecture is set, the
+// architecture component of the platform string is mapped to the GitHub
+// Actions runner.arch convention so that actions which key off RUNNER_ARCH
+// (e.g. tool installers) believe they are running on the forced platform.
+// When unset, the value falls back to the Docker daemon's reported
+// architecture, preserving the previous behavior.
+func (rc *RunContext) runnerArch(ctx context.Context) string {
+	if arch := platformToRunnerArch(rc.Config.ContainerArchitecture); arch != "" {
+		return arch
+	}
+	return container.RunnerArch(ctx)
+}
+
+func platformToRunnerArch(platform string) string {
+	if platform == "" {
+		return ""
+	}
+	// Trim "<os>/" prefix and any "/<variant>" suffix to isolate the architecture
+	// component of an OCI platform string (e.g. "linux/amd64", "linux/arm64/v8").
+	arch := platform
+	if idx := strings.Index(arch, "/"); idx != -1 {
+		arch = arch[idx+1:]
+	}
+	if idx := strings.Index(arch, "/"); idx != -1 {
+		arch = arch[:idx]
+	}
+	switch strings.ToLower(arch) {
+	case "amd64", "x86_64":
+		return "X64"
+	case "386", "i386":
+		return "X86"
+	case "arm64", "aarch64":
+		return "ARM64"
+	case "arm":
+		return "ARM"
+	}
+	return arch
 }
