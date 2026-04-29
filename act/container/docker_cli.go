@@ -462,7 +462,17 @@ func parse(flags *pflag.FlagSet, copts *containerOptions, serverOS string) (*con
 	// parsing flags, we haven't yet sent a _ping to the daemon to determine
 	// what operating system it is.
 	deviceMappings := []container.DeviceMapping{}
+	cdiDeviceIDs := []string{}
 	for _, device := range copts.devices.GetAll() {
+		if isCDIDeviceID(device) {
+			// CDI devices (e.g. "lima-vm.io/rosetta=cached" or
+			// "nvidia.com/gpu=all") are not host paths; they are resolved
+			// by the daemon via the CDI registry. Route them to
+			// DeviceRequests with the "cdi" driver instead of validating
+			// them as device paths.
+			cdiDeviceIDs = append(cdiDeviceIDs, device)
+			continue
+		}
 		var (
 			validated     string
 			deviceMapping container.DeviceMapping
@@ -604,7 +614,7 @@ func parse(flags *pflag.FlagSet, copts *containerOptions, serverOS string) (*con
 		Ulimits:              copts.ulimits.GetList(),
 		DeviceCgroupRules:    copts.deviceCgroupRules.GetAll(),
 		Devices:              deviceMappings,
-		DeviceRequests:       copts.gpus.Value(),
+		DeviceRequests:       buildDeviceRequests(copts.gpus.Value(), cdiDeviceIDs),
 	}
 
 	config := &container.Config{
@@ -1082,4 +1092,37 @@ func validateAPIVersion(c *containerConfig, serverAPIVersion string) error {
 		}
 	}
 	return nil
+}
+
+// cdiDeviceIDPattern matches a CDI fully-qualified device name. The format is
+// `<vendor>/<class>=<name>` where <vendor> is a DNS-style domain such as
+// `lima-vm.io` or `nvidia.com`. See
+// https://github.com/cncf-tags/container-device-interface/blob/main/SPEC.md.
+var cdiDeviceIDPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9.-]*[a-z0-9])?)+/[a-zA-Z0-9_.-]+=.+$`)
+
+// isCDIDeviceID returns true when the supplied --device argument refers to a
+// CDI device (e.g. "lima-vm.io/rosetta=cached") rather than a host device path
+// (e.g. "/dev/kvm[:/dev/kvm[:rwm]]").
+func isCDIDeviceID(val string) bool {
+	if path.IsAbs(val) {
+		return false
+	}
+	return cdiDeviceIDPattern.MatchString(val)
+}
+
+// buildDeviceRequests merges the GPU device requests parsed from --gpus with a
+// synthetic CDI request that carries any --device arguments recognised as CDI
+// fully-qualified device names. The Docker daemon resolves them through its
+// registered CDI driver.
+func buildDeviceRequests(gpus []container.DeviceRequest, cdiDeviceIDs []string) []container.DeviceRequest {
+	if len(cdiDeviceIDs) == 0 {
+		return gpus
+	}
+	requests := make([]container.DeviceRequest, 0, len(gpus)+1)
+	requests = append(requests, gpus...)
+	requests = append(requests, container.DeviceRequest{
+		Driver:    "cdi",
+		DeviceIDs: cdiDeviceIDs,
+	})
+	return requests
 }
